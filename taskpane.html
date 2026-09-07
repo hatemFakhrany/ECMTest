@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>My Outlook Add-in</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #faf9f8;
+      color: #201f1e;
+    }
+    h1 {
+      font-size: 18px;
+      color: #0078d4;
+    }
+    #status {
+      margin-top: 12px;
+      padding: 10px;
+      background: #fff;
+      border: 1px solid #edebe9;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    button {
+      margin-top: 12px;
+      background: #0078d4;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #106ebe;
+    }
+  </style>
+</head>
+<body>
+  <h1>My Outlook Add-in</h1>
+  <p>This task pane runs inside Outlook using Office.js.</p>
+  <button id="getInfoBtn">Show current email subject</button>
+  <div id="status">Waiting for action...</div>
+
+  <script>
+    Office.onReady(() => {
+      document.getElementById("getInfoBtn").onclick = () => {
+        const item = Office.context.mailbox.item;
+        if (item && item.subject) {
+          document.getElementById("status").innerText = "Subject: " + item.subject;
+        } else {
+          document.getElementById("status").innerText = "No item selected or subject unavailable.";
+        }
+      };
+    });
+  </script>
+</body>
+</html>
