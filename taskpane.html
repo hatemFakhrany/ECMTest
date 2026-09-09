@@ -42,18 +42,48 @@
 <body>
   <h1>My Outlook Add-in</h1>
   <p>This task pane runs inside Outlook using Office.js.</p>
-  <button id="getInfoBtn">Show current email subject</button>
+  <button id="getInfoBtn">Show email details</button>
   <div id="status">Waiting for action...</div>
 
   <script>
     Office.onReady(() => {
       document.getElementById("getInfoBtn").onclick = () => {
         const item = Office.context.mailbox.item;
-        if (item && item.subject) {
-          document.getElementById("status").innerText = "Subject: " + item.subject;
-        } else {
-          document.getElementById("status").innerText = "No item selected or subject unavailable.";
+
+        if (!item) {
+          document.getElementById("status").innerText = "No item selected.";
+          return;
         }
+
+        // Subject
+        const subject = item.subject || "(no subject)";
+
+        // From (sender) - available in Read mode
+        const from = item.from
+          ? item.from.displayName + " <" + item.from.emailAddress + ">"
+          : "(unavailable)";
+
+        // To (recipients) - array of EmailAddressDetails in Read mode
+        let to = "(unavailable)";
+        if (item.to && item.to.length) {
+          to = item.to
+            .map(r => r.displayName + " <" + r.emailAddress + ">")
+            .join(", ");
+        }
+
+        // Body must be fetched asynchronously
+        item.body.getAsync(Office.CoercionType.Text, (result) => {
+          let bodyText = "(unavailable)";
+          if (result.status === Office.AsyncResultStatus.Succeeded) {
+            bodyText = result.value;
+          }
+
+          document.getElementById("status").innerHTML =
+            "<b>Subject:</b> " + subject + "<br><br>" +
+            "<b>From:</b> " + from + "<br><br>" +
+            "<b>To:</b> " + to + "<br><br>" +
+            "<b>Body:</b><br>" + bodyText.replace(/\n/g, "<br>");
+        });
       };
     });
   </script>
