@@ -45,39 +45,34 @@
   <button id="getInfoBtn">Show email details</button>
   <div id="status">Waiting for action...</div>
 
+  <h3>Attachments</h3>
+  <div id="attachmentsList">No attachments loaded yet.</div>
+
   <script>
     Office.onReady(() => {
-      document.getElementById("getInfoBtn").onclick = () => {
-        const item = Office.context.mailbox.item;
+      const item = Office.context.mailbox.item;
 
+      document.getElementById("getInfoBtn").onclick = () => {
         if (!item) {
           document.getElementById("status").innerText = "No item selected.";
           return;
         }
 
-        // Subject
         const subject = item.subject || "(no subject)";
-
-        // From (sender) - available in Read mode
         const from = item.from
           ? item.from.displayName + " <" + item.from.emailAddress + ">"
           : "(unavailable)";
 
-        // To (recipients) - array of EmailAddressDetails in Read mode
         let to = "(unavailable)";
         if (item.to && item.to.length) {
-          to = item.to
-            .map(r => r.displayName + " <" + r.emailAddress + ">")
-            .join(", ");
+          to = item.to.map(r => r.displayName + " <" + r.emailAddress + ">").join(", ");
         }
 
-        // Body must be fetched asynchronously
         item.body.getAsync(Office.CoercionType.Text, (result) => {
           let bodyText = "(unavailable)";
           if (result.status === Office.AsyncResultStatus.Succeeded) {
             bodyText = result.value;
           }
-
           document.getElementById("status").innerHTML =
             "<b>Subject:</b> " + subject + "<br><br>" +
             "<b>From:</b> " + from + "<br><br>" +
@@ -85,6 +80,68 @@
             "<b>Body:</b><br>" + bodyText.replace(/\n/g, "<br>");
         });
       };
+
+      // List attachments
+      const listDiv = document.getElementById("attachmentsList");
+      if (item && item.attachments && item.attachments.length > 0) {
+        listDiv.innerHTML = "";
+        item.attachments.forEach((att) => {
+          const row = document.createElement("div");
+          row.style.marginBottom = "8px";
+
+          const label = document.createElement("span");
+          label.innerText = att.name + " (" + Math.round(att.size / 1024) + " KB) ";
+          row.appendChild(label);
+
+          // Inline attachments (like embedded images) usually aren't meant to be downloaded
+          if (!att.isInline) {
+            const btn = document.createElement("button");
+            btn.innerText = "Download";
+            btn.onclick = () => downloadAttachment(att, row);
+            row.appendChild(btn);
+          }
+
+          listDiv.appendChild(row);
+        });
+      } else {
+        listDiv.innerText = "No attachments on this item.";
+      }
+
+      function downloadAttachment(att, row) {
+        item.getAttachmentContentAsync(att.id, (result) => {
+          if (result.status !== Office.AsyncResultStatus.Succeeded) {
+            alert("Failed to fetch attachment: " + result.error.message);
+            return;
+          }
+
+          const content = result.value;
+
+          if (content.format === Office.MailboxEnums.AttachmentContentFormat.Base64) {
+            // Convert base64 to a Blob, then trigger a browser download
+            const byteChars = atob(content.content);
+            const byteNumbers = new Array(byteChars.length);
+            for (let i = 0; i < byteChars.length; i++) {
+              byteNumbers[i] = byteChars.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray]);
+
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = att.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          } else if (content.format === Office.MailboxEnums.AttachmentContentFormat.Url) {
+            // Some attachments (e.g. cloud-hosted files) return a URL instead of base64
+            window.open(content.content, "_blank");
+          } else {
+            alert("Unsupported attachment format: " + content.format);
+          }
+        });
+      }
     });
   </script>
 </body>
