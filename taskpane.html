@@ -43,12 +43,17 @@
   <h1>My Outlook Add-in</h1>
   <p>This task pane runs inside Outlook using Office.js.</p>
   <button id="getInfoBtn">Show email details</button>
+  <button id="saveBtn" style="margin-left:8px;">Save to Database</button>
   <div id="status">Waiting for action...</div>
 
   <h3>Attachments</h3>
   <div id="attachmentsList">No attachments loaded yet.</div>
 
   <script>
+    // ==== CONFIGURE THIS ====
+    const API_ENDPOINT = "http://185.154.146.200:300/api/Email/SaveEmail"; // NOTE: HTTP endpoint - see warning below
+    // =========================
+
     Office.onReady(() => {
       const item = Office.context.mailbox.item;
 
@@ -57,31 +62,88 @@
           document.getElementById("status").innerText = "No item selected.";
           return;
         }
-
-        const subject = item.subject || "(no subject)";
-        const from = item.from
-          ? item.from.displayName + " <" + item.from.emailAddress + ">"
-          : "(unavailable)";
-
-        let to = "(unavailable)";
-        if (item.to && item.to.length) {
-          to = item.to.map(r => r.displayName + " <" + r.emailAddress + ">").join(", ");
-        }
-
-        item.body.getAsync(Office.CoercionType.Text, (result) => {
-          let bodyText = "(unavailable)";
-          if (result.status === Office.AsyncResultStatus.Succeeded) {
-            bodyText = result.value;
-          }
+        collectEmailData((data) => {
           document.getElementById("status").innerHTML =
-            "<b>Subject:</b> " + subject + "<br><br>" +
-            "<b>From:</b> " + from + "<br><br>" +
-            "<b>To:</b> " + to + "<br><br>" +
-            "<b>Body:</b><br>" + bodyText.replace(/\n/g, "<br>");
+            "<b>Subject:</b> " + data.subject + "<br><br>" +
+            "<b>From:</b> " + data.from + "<br><br>" +
+            "<b>To:</b> " + data.to + "<br><br>" +
+            "<b>Body:</b><br>" + data.body.replace(/\n/g, "<br>") + "<br><br>" +
+            "<b>Attachments:</b> " + data.attachments.length;
         });
       };
 
-      // List attachments
+      document.getElementById("saveBtn").onclick = () => {
+        document.getElementById("status").innerText = "Collecting email data...";
+        collectEmailData((data) => {
+          document.getElementById("status").innerText = "Uploading to database...";
+          saveToDatabase(data);
+        });
+      };
+
+      // ---- Collect subject, from, to, body, and attachment contents ----
+      function collectEmailData(callback) {
+        const subject = item.subject || "";
+        const from = item.from ? item.from.emailAddress : "";
+        const to = (item.to || []).map(r => r.emailAddress).join(";");
+
+        item.body.getAsync(Office.CoercionType.Text, (bodyResult) => {
+          const body = bodyResult.status === Office.AsyncResultStatus.Succeeded
+            ? bodyResult.value
+            : "";
+
+          const attachmentDefs = (item.attachments || []).filter(a => !a.isInline);
+
+          if (attachmentDefs.length === 0) {
+            callback({ subject, from, to, body, attachments: [] });
+            return;
+          }
+
+          // Fetch content for every attachment in parallel
+          let remaining = attachmentDefs.length;
+          const attachments = [];
+
+          attachmentDefs.forEach((att) => {
+            item.getAttachmentContentAsync(att.id, (result) => {
+              if (result.status === Office.AsyncResultStatus.Succeeded &&
+                  result.value.format === Office.MailboxEnums.AttachmentContentFormat.Base64) {
+                attachments.push({
+                  name: att.name,
+                  contentType: att.contentType || "application/octet-stream",
+                  sizeBytes: att.size,
+                  contentBase64: result.value.content
+                });
+              }
+              remaining--;
+              if (remaining === 0) {
+                callback({ subject, from, to, body, attachments });
+              }
+            });
+          });
+        });
+      }
+
+      // ---- POST the collected data to your API ----
+      function saveToDatabase(data) {
+        fetch(API_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data)
+        })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error("Server responded with " + response.status);
+            }
+            return response.json().catch(() => ({}));
+          })
+          .then(() => {
+            document.getElementById("status").innerText = "Saved successfully!";
+          })
+          .catch((err) => {
+            document.getElementById("status").innerText = "Save failed: " + err.message;
+          });
+      }
+
+      // ---- Render the attachment list (unchanged from before, for manual download) ----
       const listDiv = document.getElementById("attachmentsList");
       if (item && item.attachments && item.attachments.length > 0) {
         listDiv.innerHTML = "";
@@ -93,11 +155,10 @@
           label.innerText = att.name + " (" + Math.round(att.size / 1024) + " KB) ";
           row.appendChild(label);
 
-          // Inline attachments (like embedded images) usually aren't meant to be downloaded
           if (!att.isInline) {
             const btn = document.createElement("button");
             btn.innerText = "Download";
-            btn.onclick = () => downloadAttachment(att, row);
+            btn.onclick = () => downloadAttachment(att);
             row.appendChild(btn);
           }
 
@@ -107,17 +168,14 @@
         listDiv.innerText = "No attachments on this item.";
       }
 
-      function downloadAttachment(att, row) {
+      function downloadAttachment(att) {
         item.getAttachmentContentAsync(att.id, (result) => {
           if (result.status !== Office.AsyncResultStatus.Succeeded) {
             alert("Failed to fetch attachment: " + result.error.message);
             return;
           }
-
           const content = result.value;
-
           if (content.format === Office.MailboxEnums.AttachmentContentFormat.Base64) {
-            // Convert base64 to a Blob, then trigger a browser download
             const byteChars = atob(content.content);
             const byteNumbers = new Array(byteChars.length);
             for (let i = 0; i < byteChars.length; i++) {
@@ -125,7 +183,6 @@
             }
             const byteArray = new Uint8Array(byteNumbers);
             const blob = new Blob([byteArray]);
-
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
@@ -135,7 +192,6 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
           } else if (content.format === Office.MailboxEnums.AttachmentContentFormat.Url) {
-            // Some attachments (e.g. cloud-hosted files) return a URL instead of base64
             window.open(content.content, "_blank");
           } else {
             alert("Unsupported attachment format: " + content.format);
