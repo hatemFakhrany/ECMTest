@@ -125,22 +125,27 @@
       // ---- POST the collected data to your API ----
       function saveToDatabase(data) {
         fetch(API_ENDPOINT, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data)
-        })
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error("Server responded with " + response.status);
-            }
-            return response.json().catch(() => ({}));
-          })
-          .then(() => {
-            document.getElementById("status").innerText = "Saved successfully!";
-          })
-          .catch((err) => {
-            document.getElementById("status").innerText = "Save failed: " + err.message;
-          });
+    method: "POST",
+    headers: {
+        "Content-Type": "application/json"
+    },
+    body: JSON.stringify(data)
+})
+.then(async response => {
+
+    const text = await response.text();
+
+    document.getElementById("status").innerText =
+        "Status: " + response.status +
+        " Response: " + text;
+})
+.catch(err => {
+
+    console.error(err);
+
+    document.getElementById("status").innerText =
+        "Network Error: " + err.message;
+});
       }
 
       // ---- Render the attachment list (unchanged from before, for manual download) ----
