@@ -131,7 +131,8 @@
 
       // ---- POST the collected data to your API ----
       function saveToDatabase(data) {
-	 var x= API_ENDPOINT+"CreateDocumnet";
+	 var x= API_ENDPOINT+'CreateDocumnet';
+	 alert(x);
         fetch(x, {
     method: "POST",
     headers: {
@@ -156,7 +157,8 @@
 });
       }
 function ConvertToCorr(data) {
-var x= API_ENDPOINT+"CreateCorrespondence";
+var x= API_ENDPOINT+'CreateCorrespondence';
+alert(x);
         fetch(x, {
     method: "POST",
     headers: {
