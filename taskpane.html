@@ -43,7 +43,8 @@
   <h1>My Outlook Add-in</h1>
   <p>This task pane runs inside Outlook using Office.js.</p>
   <button id="getInfoBtn">Show email details</button>
-  <button id="saveBtn" style="margin-left:8px;">Save to Database</button>
+  <button id="saveBtn" style="margin-left:8px;">Create new Document</button>
+   <button id="btnCorr" style="margin-left:8px;">Convert to correspondence</button>
   <div id="status">Waiting for action...</div>
 
   <h3>Attachments</h3>
@@ -51,7 +52,7 @@
 
   <script>
     // ==== CONFIGURE THIS ====
-    const API_ENDPOINT = "https://ileana-nonsculptural-ludie.ngrok-free.dev/api/Emails"; // NOTE: HTTP endpoint - see warning below
+    const API_ENDPOINT = "https://ileana-nonsculptural-ludie.ngrok-free.dev/api/Emails/"; // NOTE: HTTP endpoint - see warning below
     // =========================
 
     Office.onReady(() => {
@@ -79,7 +80,13 @@
           saveToDatabase(data);
         });
       };
-
+     document.getElementById("btnCorr").onclick = () => {
+        document.getElementById("status").innerText = "Collecting email data...";
+        collectEmailData((data) => {
+          document.getElementById("status").innerText = "Uploading to database...";
+          ConvertToCorr(data);
+        });
+      };
       // ---- Collect subject, from, to, body, and attachment contents ----
       function collectEmailData(callback) {
         const subject = item.subject || "";
@@ -124,7 +131,8 @@
 
       // ---- POST the collected data to your API ----
       function saveToDatabase(data) {
-        fetch(API_ENDPOINT, {
+	 var x= API_ENDPOINT+"CreateDocumnet";
+        fetch(x, {
     method: "POST",
     headers: {
         "Content-Type": "application/json"
@@ -147,7 +155,31 @@
         "Network Error: " + err.message;
 });
       }
+function ConvertToCorr(data) {
+var x= API_ENDPOINT+"CreateCorrespondence";
+        fetch(x, {
+    method: "POST",
+    headers: {
+        "Content-Type": "application/json"
+    },
+    body: JSON.stringify(data)
+})
+.then(async response => {
 
+    const text = await response.text();
+
+    document.getElementById("status").innerText =
+        "Status: " + response.status +
+        " Response: " + text;
+})
+.catch(err => {
+
+    console.error(err);
+
+    document.getElementById("status").innerText =
+        "Network Error: " + err.message;
+});
+      }
       // ---- Render the attachment list (unchanged from before, for manual download) ----
       const listDiv = document.getElementById("attachmentsList");
       if (item && item.attachments && item.attachments.length > 0) {
