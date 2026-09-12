@@ -45,10 +45,10 @@
   <!-- <button id="getInfoBtn">Show email details</button> -->
   <button id="saveBtn" style="margin-left:8px;">Create new Document</button>
   <!--<button id="btnCorr" style="margin-left:8px;">Convert to correspondence</button> -->
-  <div id="status">Waiting for action...</div>
+  <div id="status"></div>
 
-  <h3>Attachments</h3>
-  <div id="attachmentsList">No attachments loaded yet.</div>
+  <!--<h3>Attachments</h3>
+  <div id="attachmentsList">No attachments loaded yet.</div> -->
 
   <script>
     // ==== CONFIGURE THIS ====
@@ -74,6 +74,7 @@
       };
 
       document.getElementById("saveBtn").onclick = () => {
+		document.getElementById("saveBtn").disabled = true;
         document.getElementById("status").innerText = "Collecting email data...";
         collectEmailData((data) => {
           document.getElementById("status").innerText = "Uploading to database...";
@@ -83,7 +84,7 @@
      document.getElementById("btnCorr").onclick = () => {
         document.getElementById("status").innerText = "Collecting email data...";
         collectEmailData((data) => {
-          document.getElementById("status").innerText = "Uploading to database...";
+          document.getElementById("status").innerText = "Save To ECM+...";
           ConvertToCorr(data);
         });
       };
