@@ -105,8 +105,7 @@
     const API_ENDPOINT = "https://ileana-nonsculptural-ludie.ngrok-free.dev/api/Emails/";
     // ASSUMPTION: adjust this path if your AuthenticateActiveDirectory action lives under a
     // different controller route.
-    const LOGIN_ENDPOINT = "https://ileana-nonsculptural-ludie.ngrok-free.dev/api/Authentication/LoginFromOutlook";
-    const LOOKUP_USER_ENDPOINT = "https://ileana-nonsculptural-ludie.ngrok-free.dev/api/Authentication/Users/ByUsername";
+    const LOGIN_ENDPOINT = "https://ileana-nonsculptural-ludie.ngrok-free.dev/api/Authentication/Authenticate";
     // =========================
 
     // Holds the logged-in user's info once login succeeds; attached to every later request.
@@ -134,10 +133,10 @@
         fetch(LOGIN_ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // This now only needs UserNameOrEmail/Password -- the /Login endpoint fills in
-          // domain/service-account values server-side.
+          // ASSUMPTION: AuthenticateUserQuery's field names. If your query uses different
+          // property names, change "userName"/"password" below to match exactly.
           body: JSON.stringify({
-            userNameOrEmail: username,
+            userName: username,
             password: password
           })
         })
@@ -149,39 +148,26 @@
             return response.json();
           })
           .then((result) => {
-            // ActiveDirectoryAuthenticationResult is (bool Valid, string UserName, string Error) --
-            // serialized as camelCase: valid, userName, error.
-            if (!result.valid) {
-              throw new Error(result.error || "Invalid username or password.");
+            // AuthenticateUserResult = { status, user, valid }.
+            // valid is true only when status === Authenticated AND user is not null.
+            if (!result.valid || !result.user) {
+              throw new Error(
+                "Login failed" + (result.status ? " (" + result.status + ")" : "") +
+                ". Check your username and password."
+              );
             }
 
-            // AD login doesn't return a numeric userId, so fetch it from the Users/ByUsername
-            // lookup endpoint before letting the person into the app.
-            const lookupUrl = LOOKUP_USER_ENDPOINT + "?userName=" + encodeURIComponent(result.userName);
-            return fetch(lookupUrl)
-              .then(async (lookupResponse) => {
-                if (!lookupResponse.ok) {
-                  // Login itself succeeded; just proceed without a userId rather than blocking the person.
-                  currentUser = { userName: result.userName, userId: null };
-                  return;
-                }
-                const userDto = await lookupResponse.json();
-                currentUser = {
-                  userName: result.userName,
-                  // Adjust this field name if AuthenticationUserDto uses a different casing/name.
-                  userId: userDto.id ?? userDto.userId ?? null
-                };
-              })
-              .catch(() => {
-                currentUser = { userName: result.userName, userId: null };
-              });
-          })
-          .then(() => {
+            currentUser = {
+              userId: result.user.id,
+              userName: result.user.userName,
+              fullName: result.user.fullName
+            };
+
             document.getElementById("loginSection").style.display = "none";
             document.getElementById("appSection").style.display = "block";
             document.getElementById("userBadge").innerText =
-              "Signed in as " + currentUser.userName +
-              (currentUser.userId ? " (ID: " + currentUser.userId + ")" : "");
+              "Signed in as " + (currentUser.fullName || currentUser.userName) +
+              " (ID: " + currentUser.userId + ")";
           })
           .catch((err) => {
             errorDiv.innerText = err.message;
@@ -266,12 +252,12 @@
         });
       }
 
-      // Attaches the logged-in user's name and id to every outgoing payload.
+      // Attaches the logged-in user's id/name to every outgoing payload.
       function buildPayload(emailData) {
         return {
           ...emailData,
-          userName: currentUser ? currentUser.userName : null,
-          userId: currentUser ? currentUser.userId : null
+          userId: currentUser ? currentUser.userId : null,
+          userName: currentUser ? currentUser.userName : null
         };
       }
 
