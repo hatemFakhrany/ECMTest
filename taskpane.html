@@ -90,6 +90,7 @@
   <!-- ==== MAIN APP SECTION (hidden until login succeeds) ==== -->
   <div id="appSection">
     <div id="userBadge"></div>
+    <button id="logoutBtn" style="background:#a4262c; font-size:12px; padding:4px 10px; margin-top:0;">Logout</button>
     <p>This task pane is for saving email into ECM+.</p>
     <button id="getInfoBtn">Show email details</button>
     <button id="saveBtn" style="margin-left:8px;">Create new Document</button>
@@ -113,6 +114,29 @@
 
     Office.onReady(() => {
       const item = Office.context.mailbox.item;
+
+      // ---- Try to restore a cached login first, so the person isn't asked to sign in
+      // every time they open the task pane (e.g. on a new email). ----
+      const cachedUser = Office.context.roamingSettings.get("ecmCurrentUser");
+      if (cachedUser) {
+        currentUser = cachedUser;
+        document.getElementById("loginSection").style.display = "none";
+        document.getElementById("appSection").style.display = "block";
+        document.getElementById("userBadge").innerText =
+          "Signed in as " + (currentUser.fullName || currentUser.userName) +
+          " (ID: " + currentUser.userId + ")";
+      }
+
+      // ---- LOGOUT ----
+      document.getElementById("logoutBtn").onclick = () => {
+        currentUser = null;
+        Office.context.roamingSettings.remove("ecmCurrentUser");
+        Office.context.roamingSettings.saveAsync();
+        document.getElementById("appSection").style.display = "none";
+        document.getElementById("loginSection").style.display = "block";
+        document.getElementById("username").value = "";
+        document.getElementById("password").value = "";
+      };
 
       // ---- LOGIN ----
       document.getElementById("loginBtn").onclick = () => {
@@ -162,6 +186,11 @@
               userName: result.user.userName,
               fullName: result.user.fullName
             };
+
+            // Cache the login so re-opening the task pane (e.g. on a different email)
+            // doesn't ask the person to sign in again.
+            Office.context.roamingSettings.set("ecmCurrentUser", currentUser);
+            Office.context.roamingSettings.saveAsync();
 
             document.getElementById("loginSection").style.display = "none";
             document.getElementById("appSection").style.display = "block";
@@ -216,6 +245,7 @@
         const subject = item.subject || "";
         const from = item.from ? item.from.emailAddress : "";
         const to = (item.to || []).map(r => r.emailAddress).join(";");
+        const cc = (item.cc || []).map(r => r.emailAddress).join(";");
 
         item.body.getAsync(Office.CoercionType.Text, (bodyResult) => {
           const body = bodyResult.status === Office.AsyncResultStatus.Succeeded
@@ -225,7 +255,7 @@
           const attachmentDefs = (item.attachments || []).filter(a => !a.isInline);
 
           if (attachmentDefs.length === 0) {
-            callback(buildPayload({ subject, from, to, body, attachments: [] }));
+            callback(buildPayload({ subject, from, to, cc, body, attachments: [] }));
             return;
           }
 
@@ -245,7 +275,7 @@
               }
               remaining--;
               if (remaining === 0) {
-                callback(buildPayload({ subject, from, to, body, attachments }));
+                callback(buildPayload({ subject, from, to, cc, body, attachments }));
               }
             });
           });
