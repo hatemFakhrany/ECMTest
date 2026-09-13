@@ -37,27 +37,163 @@
     button:hover {
       background: #106ebe;
     }
+    input {
+      display: block;
+      width: 100%;
+      max-width: 260px;
+      padding: 6px 8px;
+      margin-top: 6px;
+      border: 1px solid #c8c6c4;
+      border-radius: 4px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    label {
+      font-size: 13px;
+      font-weight: 600;
+      margin-top: 10px;
+      display: block;
+    }
+    #loginError {
+      color: #a4262c;
+      font-size: 13px;
+      margin-top: 8px;
+      display: none;
+    }
+    #loginSection, #appSection {
+      margin-top: 10px;
+    }
+    #appSection {
+      display: none;
+    }
+    #userBadge {
+      font-size: 13px;
+      color: #605e5c;
+      margin-bottom: 8px;
+    }
   </style>
 </head>
 <body>
-  <h1>ECM</h1>
-  <p>This task pane For Save EMail in ECM+.</p>
-  <button id="getInfoBtn">Show email details</button>
-  <button id="saveBtn" style="margin-left:8px;">Create new Document</button>
-   <button id="btnCorr" style="margin-left:8px;">Convert to correspondence</button>
-  <div id="status">Waiting for action...</div>
+  <h1>ECM+</h1>
 
-  <h3>Attachments</h3>
-  <div id="attachmentsList">No attachments loaded yet.</div>
+  <!-- ==== LOGIN SECTION (shown first) ==== -->
+  <div id="loginSection">
+    <p>Sign in to use ECM+.</p>
+    <label for="username">Username</label>
+    <input type="text" id="username" autocomplete="username" />
+    <label for="password">Password</label>
+    <input type="password" id="password" autocomplete="current-password" />
+    <button id="loginBtn">Login</button>
+    <div id="loginError"></div>
+  </div>
+
+  <!-- ==== MAIN APP SECTION (hidden until login succeeds) ==== -->
+  <div id="appSection">
+    <div id="userBadge"></div>
+    <p>This task pane is for saving email into ECM+.</p>
+    <button id="getInfoBtn">Show email details</button>
+    <button id="saveBtn" style="margin-left:8px;">Create new Document</button>
+    <button id="btnCorr" style="margin-left:8px;">Convert to correspondence</button>
+    <div id="status">Waiting for action...</div>
+
+    <h3>Attachments</h3>
+    <div id="attachmentsList">No attachments loaded yet.</div>
+  </div>
 
   <script>
     // ==== CONFIGURE THIS ====
-    const API_ENDPOINT = "https://ileana-nonsculptural-ludie.ngrok-free.dev/api/Emails/"; // NOTE: HTTP endpoint - see warning below
+    const API_ENDPOINT = "https://ileana-nonsculptural-ludie.ngrok-free.dev/api/Emails/";
+    // ASSUMPTION: adjust this path if your AuthenticateActiveDirectory action lives under a
+    // different controller route.
+    const LOGIN_ENDPOINT = "https://ileana-nonsculptural-ludie.ngrok-free.dev/api/Authentication/LoginFromOutlook";
+    const LOOKUP_USER_ENDPOINT = "https://ileana-nonsculptural-ludie.ngrok-free.dev/api/Authentication/Users/ByUsername";
     // =========================
+
+    // Holds the logged-in user's info once login succeeds; attached to every later request.
+    let currentUser = null; // will become { userId, userName }
 
     Office.onReady(() => {
       const item = Office.context.mailbox.item;
 
+      // ---- LOGIN ----
+      document.getElementById("loginBtn").onclick = () => {
+        const username = document.getElementById("username").value.trim();
+        const password = document.getElementById("password").value;
+        const errorDiv = document.getElementById("loginError");
+        errorDiv.style.display = "none";
+
+        if (!username || !password) {
+          errorDiv.innerText = "Please enter both username and password.";
+          errorDiv.style.display = "block";
+          return;
+        }
+
+        document.getElementById("loginBtn").disabled = true;
+        document.getElementById("loginBtn").innerText = "Signing in...";
+
+        fetch(LOGIN_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          // This now only needs UserNameOrEmail/Password -- the /Login endpoint fills in
+          // domain/service-account values server-side.
+          body: JSON.stringify({
+            userNameOrEmail: username,
+            password: password
+          })
+        })
+          .then(async (response) => {
+            if (!response.ok) {
+              const text = await response.text().catch(() => "");
+              throw new Error("Login request failed (" + response.status + ") " + text);
+            }
+            return response.json();
+          })
+          .then((result) => {
+            // ActiveDirectoryAuthenticationResult is (bool Valid, string UserName, string Error) --
+            // serialized as camelCase: valid, userName, error.
+            if (!result.valid) {
+              throw new Error(result.error || "Invalid username or password.");
+            }
+
+            // AD login doesn't return a numeric userId, so fetch it from the Users/ByUsername
+            // lookup endpoint before letting the person into the app.
+            const lookupUrl = LOOKUP_USER_ENDPOINT + "?userName=" + encodeURIComponent(result.userName);
+            return fetch(lookupUrl)
+              .then(async (lookupResponse) => {
+                if (!lookupResponse.ok) {
+                  // Login itself succeeded; just proceed without a userId rather than blocking the person.
+                  currentUser = { userName: result.userName, userId: null };
+                  return;
+                }
+                const userDto = await lookupResponse.json();
+                currentUser = {
+                  userName: result.userName,
+                  // Adjust this field name if AuthenticationUserDto uses a different casing/name.
+                  userId: userDto.id ?? userDto.userId ?? null
+                };
+              })
+              .catch(() => {
+                currentUser = { userName: result.userName, userId: null };
+              });
+          })
+          .then(() => {
+            document.getElementById("loginSection").style.display = "none";
+            document.getElementById("appSection").style.display = "block";
+            document.getElementById("userBadge").innerText =
+              "Signed in as " + currentUser.userName +
+              (currentUser.userId ? " (ID: " + currentUser.userId + ")" : "");
+          })
+          .catch((err) => {
+            errorDiv.innerText = err.message;
+            errorDiv.style.display = "block";
+          })
+          .finally(() => {
+            document.getElementById("loginBtn").disabled = false;
+            document.getElementById("loginBtn").innerText = "Login";
+          });
+      };
+
+      // ---- APP BUTTONS (only usable after login) ----
       document.getElementById("getInfoBtn").onclick = () => {
         if (!item) {
           document.getElementById("status").innerText = "No item selected.";
@@ -80,13 +216,15 @@
           saveToDatabase(data);
         });
       };
-     document.getElementById("btnCorr").onclick = () => {
+
+      document.getElementById("btnCorr").onclick = () => {
         document.getElementById("status").innerText = "Collecting email data...";
         collectEmailData((data) => {
           document.getElementById("status").innerText = "Uploading to database...";
           ConvertToCorr(data);
         });
       };
+
       // ---- Collect subject, from, to, body, and attachment contents ----
       function collectEmailData(callback) {
         const subject = item.subject || "";
@@ -101,11 +239,10 @@
           const attachmentDefs = (item.attachments || []).filter(a => !a.isInline);
 
           if (attachmentDefs.length === 0) {
-            callback({ subject, from, to, body, attachments: [] });
+            callback(buildPayload({ subject, from, to, body, attachments: [] }));
             return;
           }
 
-          // Fetch content for every attachment in parallel
           let remaining = attachmentDefs.length;
           const attachments = [];
 
@@ -122,66 +259,61 @@
               }
               remaining--;
               if (remaining === 0) {
-                callback({ subject, from, to, body, attachments });
+                callback(buildPayload({ subject, from, to, body, attachments }));
               }
             });
           });
         });
       }
 
+      // Attaches the logged-in user's name and id to every outgoing payload.
+      function buildPayload(emailData) {
+        return {
+          ...emailData,
+          userName: currentUser ? currentUser.userName : null,
+          userId: currentUser ? currentUser.userId : null
+        };
+      }
+
       // ---- POST the collected data to your API ----
       function saveToDatabase(data) {
-	 var x= API_ENDPOINT+'CreateDocumnet';
-	 
+        var x = API_ENDPOINT + 'CreateDocumnet';
+
         fetch(x, {
-    method: "POST",
-    headers: {
-        "Content-Type": "application/json"
-    },
-    body: JSON.stringify(data)
-})
-.then(async response => {
-
-    const text = await response.text();
-
-    document.getElementById("status").innerText =
-        "Status: " + response.status +
-        " Response: " + text;
-})
-.catch(err => {
-
-    console.error(err);
-
-    document.getElementById("status").innerText =
-        "Network Error: " + err.message;
-});
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data)
+        })
+          .then(async response => {
+            const text = await response.text();
+            document.getElementById("status").innerText =
+              "Status: " + response.status + " Response: " + text;
+          })
+          .catch(err => {
+            console.error(err);
+            document.getElementById("status").innerText = "Network Error: " + err.message;
+          });
       }
-function ConvertToCorr(data) {
-var x= API_ENDPOINT+'CreateCorrespondence';
+
+      function ConvertToCorr(data) {
+        var x = API_ENDPOINT + 'CreateCorrespondence';
         fetch(x, {
-    method: "POST",
-    headers: {
-        "Content-Type": "application/json"
-    },
-    body: JSON.stringify(data)
-})
-.then(async response => {
-
-    const text = await response.text();
-
-    document.getElementById("status").innerText =
-        "Status: " + response.status +
-        " Response: " + text;
-})
-.catch(err => {
-
-    console.error(err);
-
-    document.getElementById("status").innerText =
-        "Network Error: " + err.message;
-});
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data)
+        })
+          .then(async response => {
+            const text = await response.text();
+            document.getElementById("status").innerText =
+              "Status: " + response.status + " Response: " + text;
+          })
+          .catch(err => {
+            console.error(err);
+            document.getElementById("status").innerText = "Network Error: " + err.message;
+          });
       }
-      // ---- Render the attachment list (unchanged from before, for manual download) ----
+
+      // ---- Render the attachment list (unchanged, for manual download) ----
       const listDiv = document.getElementById("attachmentsList");
       if (item && item.attachments && item.attachments.length > 0) {
         listDiv.innerHTML = "";
