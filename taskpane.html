@@ -115,68 +115,17 @@
       border-radius: 4px;
       box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
     }
-    .modal-header, .modal-footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 18px;
-      border-bottom: 1px solid #edebe9;
-    }
-    .modal-footer {
-      justify-content: flex-end;
-      gap: 8px;
-      border-top: 1px solid #edebe9;
-      border-bottom: 0;
-    }
     .modal-body {
-      padding: 18px;
+      padding: 0;
     }
-    .modal-close {
-      margin: 0;
-      padding: 2px 8px;
-      background: transparent;
-      color: #605e5c;
-      font-size: 20px;
-    }
-    .field-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-    }
-    .field-grid label {
-      margin-top: 0;
-    }
-    .field-grid input, .field-grid select, .field-grid textarea {
+    #createDocumentFrame {
+      display: block;
       width: 100%;
-      max-width: none;
-      box-sizing: border-box;
+      height: 620px;
+      max-height: 80vh;
+      border: 0;
     }
-    .field-grid textarea {
-      min-height: 72px;
-      resize: vertical;
-    }
-    .modal-card {
-      margin-top: 14px;
-      border: 1px solid #edebe9;
-      border-radius: 4px;
-    }
-    .modal-card-header {
-      padding: 10px 12px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .modal-card-body {
-      padding: 12px;
-    }
-    .message {
-      margin: 12px 0 0;
-      padding: 10px;
-      border-radius: 4px;
-    }
-    .message.success { background: #dff6dd; color: #107c10; }
-    .message.error { background: #fde7e9; color: #a4262c; }
     @media (max-width: 560px) {
-      .field-grid { grid-template-columns: 1fr; }
       .modal { width: 100%; }
     }
   </style>
@@ -218,43 +167,24 @@
     </section>
   </div>
 
-  <div class="modal-backdrop" id="createNewDocumentModal" role="dialog" aria-modal="true" aria-labelledby="createNewDocumentTitle">
+  <div class="modal-backdrop" id="createNewDocumentModal" role="dialog" aria-modal="true" aria-label="Create new document">
     <div class="modal">
-      <div class="modal-header">
-        <h2 id="createNewDocumentTitle">Create new document</h2>
-        <button type="button" class="modal-close" id="closeCreateDocument" aria-label="Close">&times;</button>
+      <div class="modal-body">
+        <iframe id="createDocumentFrame" title="Create new document" src="about:blank"></iframe>
       </div>
-      <form id="createNewDocumentForm">
-        <div class="modal-body">
-          <div class="field-grid" id="basicDocumentFields"></div>
-          <div class="modal-card">
-            <div class="modal-card-header" id="extraInfoToggle" tabindex="0" role="button" aria-expanded="true">Extra info</div>
-            <div class="modal-card-body" id="extraDocumentFields"></div>
-          </div>
-          <div class="modal-card" id="customAttributesCard" hidden>
-            <div class="modal-card-header" id="customAttributesToggle" tabindex="0" role="button" aria-expanded="false">Custom attributes</div>
-            <div class="modal-card-body" id="customDocumentFields" hidden></div>
-          </div>
-          <div class="message success" id="successMessage" hidden></div>
-          <div class="message error" id="failedMessage" hidden></div>
-          <div id="generatedHiddensContainer"></div>
-        </div>
-        <div class="modal-footer">
-          <button type="submit" id="btnSaveNewDocument">Save</button>
-          <button type="button" id="cancelCreateDocument" style="background:#605e5c;">Close</button>
-        </div>
-      </form>
     </div>
   </div>
 
   <script>
     // ==== CONFIGURE THIS ====
     const API_ENDPOINT = "https://ileana-nonsculptural-ludie.ngrok-free.dev/api/Outlook/";
-    // The API should return an array of field definitions grouped by behaviour.
-    const DOCUMENT_FIELDS_ENDPOINT = API_ENDPOINT + "GetDocumentMetadata";
     // ASSUMPTION: adjust this path if your AuthenticateActiveDirectory action lives under a
     // different controller route.
     const LOGIN_ENDPOINT = "https://ileana-nonsculptural-ludie.ngrok-free.dev/api/Authentication/Authenticate";
+    // Base URL where the ECM.OutlookAddin ASP.NET Core MVC app (Document/Create page) is hosted.
+    // ASSUMPTION: defaults to the local dev port from launchSettings.json; point this at your
+    // deployed/tunnelled URL (e.g. another ngrok host) once the app isn't running on localhost.
+    const DOCUMENT_APP_BASE_URL = "https://hatemelfakharany-001-site8.ltempurl.com";
     // =========================
 
     // Holds the logged-in user's info once login succeeds; attached to every later request.
@@ -292,126 +222,30 @@
 
       function closeDocumentModal() {
         document.getElementById("createNewDocumentModal").classList.remove("open");
+        document.getElementById("createDocumentFrame").src = "about:blank";
       }
 
-      function toggleCard(toggleId, bodyId) {
-        const toggle = document.getElementById(toggleId);
-        const body = document.getElementById(bodyId);
-        const expanded = toggle.getAttribute("aria-expanded") === "true";
-        toggle.setAttribute("aria-expanded", expanded ? "false" : "true");
-        body.hidden = expanded;
-      }
-
-      document.getElementById("closeCreateDocument").onclick = closeDocumentModal;
-      document.getElementById("cancelCreateDocument").onclick = closeDocumentModal;
-      document.getElementById("extraInfoToggle").onclick = () => toggleCard("extraInfoToggle", "extraDocumentFields");
-      document.getElementById("customAttributesToggle").onclick = () => toggleCard("customAttributesToggle", "customDocumentFields");
-
-      function fieldValue(field) {
-        return field.defaultValue ?? field.value ?? "";
-      }
-
-      function renderField(field, container) {
-        const wrapper = document.createElement("div");
-        const label = document.createElement("label");
-        const fieldId = field.id || field.name || "documentField";
-        label.htmlFor = fieldId;
-        label.innerText = field.label || field.title || field.name || fieldId;
-        wrapper.appendChild(label);
-
-        let control;
-        if (String(field.type || "text").toLowerCase() === "textarea") {
-          control = document.createElement("textarea");
-        } else if (String(field.type || "text").toLowerCase() === "select" || Array.isArray(field.options)) {
-          control = document.createElement("select");
-          (field.options || []).forEach((option) => {
-            const optionElement = document.createElement("option");
-            optionElement.value = option.value ?? option.id ?? option;
-            optionElement.innerText = option.label ?? option.name ?? option;
-            control.appendChild(optionElement);
-          });
-        } else {
-          control = document.createElement("input");
-          control.type = field.type || "text";
-        }
-        control.id = fieldId;
-        control.name = field.name || fieldId;
-        control.value = fieldValue(field);
-        control.required = Boolean(field.required);
-        wrapper.appendChild(control);
-        container.appendChild(wrapper);
-      }
-
-      function renderDocumentFields(definitions) {
-        const basicFields = document.getElementById("basicDocumentFields");
-        const extraFields = document.getElementById("extraDocumentFields");
-        const customFields = document.getElementById("customDocumentFields");
-        basicFields.innerHTML = "";
-        extraFields.innerHTML = "";
-        customFields.innerHTML = "";
-
-        const fields = Array.isArray(definitions) ? definitions : (definitions.fields || []);
-        fields.forEach((field) => {
-          const behaviour = String(field.behaviour || field.section || "basic").toLowerCase();
-          renderField(field, behaviour.includes("custom") ? customFields : behaviour.includes("extra") ? extraFields : basicFields);
-        });
-
-        const hasCustomFields = customFields.children.length > 0;
-        document.getElementById("customAttributesCard").hidden = !hasCustomFields;
-        if (!hasCustomFields) customFields.hidden = true;
-      }
-
-      async function loadDocumentFields() {
-        const basicFields = document.getElementById("basicDocumentFields");
-        basicFields.innerText = "Loading document fields...";
-        try {
-          const query = currentUser ? "?userId=" + encodeURIComponent(currentUser.userId) : "";
-          const response = await fetch(DOCUMENT_FIELDS_ENDPOINT + query, { headers: { "Accept": "application/json" } });
-          if (!response.ok) throw new Error("Field request failed (" + response.status + ")");
-          renderDocumentFields(await response.json());
-        } catch (error) {
-          basicFields.innerText = "Unable to load document fields: " + error.message;
-        }
-      }
-
-      function collectDocumentFields() {
-        const values = {};
-        document.querySelectorAll("#createNewDocumentForm [name]").forEach((control) => {
-          values[control.name] = control.value;
-        });
-        return values;
-      }
-
+      // Opens the "Create new document" MVC page (built in ECM.OutlookAddin) inside the modal,
+      // prefilled with the current email's subject.
       document.getElementById("saveBtn").onclick = () => {
+        const subject = item && item.subject ? item.subject : "";
+        const frame = document.getElementById("createDocumentFrame");
+        frame.src = DOCUMENT_APP_BASE_URL + "/Document/Create?subject=" + encodeURIComponent(subject);
         document.getElementById("createNewDocumentModal").classList.add("open");
-        document.getElementById("successMessage").hidden = true;
-        document.getElementById("failedMessage").hidden = true;
-        loadDocumentFields();
       };
 
-      document.getElementById("createNewDocumentForm").onsubmit = (event) => {
-        event.preventDefault();
-        const saveButton = document.getElementById("btnSaveNewDocument");
-        saveButton.disabled = true;
-        document.getElementById("successMessage").hidden = true;
-        document.getElementById("failedMessage").hidden = true;
-        collectEmailData((data) => {
-          saveToDatabase({ ...data, documentFields: collectDocumentFields() }, {
-            onSuccess: (message) => {
-              const success = document.getElementById("successMessage");
-              success.innerText = message;
-              success.hidden = false;
-              saveButton.disabled = false;
-            },
-            onError: (message) => {
-              const failed = document.getElementById("failedMessage");
-              failed.innerText = message;
-              failed.hidden = false;
-              saveButton.disabled = false;
-            }
-          });
-        });
-      };
+      // The embedded page is a different origin (the ASP.NET Core app), so it talks back to us
+      // via postMessage instead of directly touching this document's DOM.
+      window.addEventListener("message", (event) => {
+        if (!event.data || typeof event.data !== "object") return;
+
+        if (event.data.type === "ecm:closeCreateDocument") {
+          closeDocumentModal();
+        } else if (event.data.type === "ecm:documentCreated") {
+          document.getElementById("status").innerText = event.data.message || "";
+          if (event.data.success) closeDocumentModal();
+        }
+      });
 
       // Runs the correct action automatically once the person is logged in.
       function runAutoAction() {
