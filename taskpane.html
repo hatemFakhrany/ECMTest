@@ -230,7 +230,7 @@
       document.getElementById("saveBtn").onclick = () => {
         const subject = item && item.subject ? item.subject : "";
         const frame = document.getElementById("createDocumentFrame");
-        frame.src = DOCUMENT_APP_BASE_URL + "/Document/CreateNewDocument?subject=" + encodeURIComponent(subject);
+        frame.src = DOCUMENT_APP_BASE_URL + "/Archive/CreateNewDocument?subject=" + encodeURIComponent(subject);
         document.getElementById("createNewDocumentModal").classList.add("open");
       };
 
