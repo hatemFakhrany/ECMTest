@@ -94,39 +94,13 @@
     .tab-panel.active {
       display: block;
     }
-    .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
-      background: rgba(32, 31, 30, 0.45);
-      z-index: 10;
-    }
-    .modal-backdrop.open {
-      display: flex;
-    }
-    .modal {
-      width: min(70vw, 720px);
-      max-height: 90vh;
-      overflow: auto;
-      background: #fff;
-      border-radius: 4px;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
-    }
-    .modal-body {
-      padding: 0;
-    }
     #createDocumentFrame {
       display: block;
       width: 100%;
-      height: 620px;
-      max-height: 80vh;
-      border: 0;
-    }
-    @media (max-width: 560px) {
-      .modal { width: 100%; }
+      height: 640px;
+      border: 1px solid #edebe9;
+      border-radius: 4px;
+      margin-top: 12px;
     }
   </style>
 </head>
@@ -154,25 +128,17 @@
     </div>
 
     <section class="tab-panel active" id="archivePanel" role="tabpanel" aria-labelledby="archiveTab">
-      <button id="saveBtn">Create new document</button>
-      <button id="getInfoBtn" style="margin-left:8px;">Show email details</button>
+      <button id="getInfoBtn">Show email details</button>
       <div id="status"></div>
       <h3>Attachments</h3>
       <div id="attachmentsList">No attachments loaded yet.</div>
+      <iframe id="createDocumentFrame" title="Create new document" src="about:blank"></iframe>
     </section>
 
     <section class="tab-panel" id="correspondencePanel" role="tabpanel" aria-labelledby="correspondenceTab">
       <p>Convert the selected email to a correspondence record.</p>
       <button id="btnCorr">Convert to correspondence</button>
     </section>
-  </div>
-
-  <div class="modal-backdrop" id="createNewDocumentModal" role="dialog" aria-modal="true" aria-label="Create new document">
-    <div class="modal">
-      <div class="modal-body">
-        <iframe id="createDocumentFrame" title="Create new document" src="about:blank"></iframe>
-      </div>
-    </div>
   </div>
 
   <script>
@@ -202,7 +168,6 @@
       // buttons and status header text -- we'll drive the flow automatically instead.
       if (mode === "archive" || mode === "convert") {
         document.getElementById("getInfoBtn").style.display = "none";
-        document.getElementById("saveBtn").style.display = "none";
         document.getElementById("btnCorr").style.display = "none";
       }
 
@@ -220,30 +185,29 @@
       document.getElementById("archiveTab").onclick = () => selectTab("archiveTab", "archivePanel");
       document.getElementById("correspondenceTab").onclick = () => selectTab("correspondenceTab", "correspondencePanel");
 
-      function closeDocumentModal() {
-        document.getElementById("createNewDocumentModal").classList.remove("open");
-        document.getElementById("createDocumentFrame").src = "about:blank";
+      // Loads the "Create new document" MVC page (built in ECM.OutlookAddin) directly into the
+      // Archive tab. The iframe's browser session has no ASP.NET Core auth cookie of its own, so
+      // it's first pointed at TaskPaneSignIn (using the userId this task pane already got back
+      // from its own login) to establish one server-side, then redirected on to the real page.
+      function loadCreateDocumentFrame() {
+        if (!currentUser || !currentUser.userId) return;
+        const returnUrl = encodeURIComponent("/Archive/CreateNewDocument");
+        const frame = document.getElementById("createDocumentFrame");
+        frame.src = DOCUMENT_APP_BASE_URL + "/Account/TaskPaneSignIn?userId=" + encodeURIComponent(currentUser.userId) + "&returnUrl=" + returnUrl;
       }
 
-      // Opens the "Create new document" MVC page (built in ECM.OutlookAddin) inside the modal,
-      // prefilled with the current email's subject.
-      document.getElementById("saveBtn").onclick = () => {
-        const subject = item && item.subject ? item.subject : "";
-        const frame = document.getElementById("createDocumentFrame");
-        frame.src = DOCUMENT_APP_BASE_URL + "/Archive/CreateNewDocument?subject=" + encodeURIComponent(subject);
-        document.getElementById("createNewDocumentModal").classList.add("open");
-      };
-
       // The embedded page is a different origin (the ASP.NET Core app), so it talks back to us
-      // via postMessage instead of directly touching this document's DOM.
+      // via postMessage instead of directly touching this document's DOM. There's no modal to
+      // close anymore -- the page lives inline in the Archive tab -- so both messages just
+      // reload it with a fresh form (e.g. to start the next document after a successful save).
       window.addEventListener("message", (event) => {
         if (!event.data || typeof event.data !== "object") return;
 
         if (event.data.type === "ecm:closeCreateDocument") {
-          closeDocumentModal();
+          loadCreateDocumentFrame();
         } else if (event.data.type === "ecm:documentCreated") {
           document.getElementById("status").innerText = event.data.message || "";
-          if (event.data.success) closeDocumentModal();
+          if (event.data.success) loadCreateDocumentFrame();
         }
       });
 
@@ -270,6 +234,7 @@
         document.getElementById("appSection").style.display = "block";
         document.getElementById("userBadge").innerText =
           "Welcome " + (currentUser.fullName || currentUser.userName);
+        loadCreateDocumentFrame();
         runAutoAction();
       }
 
@@ -282,6 +247,7 @@
         document.getElementById("loginSection").style.display = "block";
         document.getElementById("username").value = "";
         document.getElementById("password").value = "";
+        document.getElementById("createDocumentFrame").src = "about:blank";
       };
 
       // ---- LOGIN ----
@@ -343,6 +309,7 @@
             document.getElementById("userBadge").innerText =
               "Signed in as " + (currentUser.fullName || currentUser.userName) +
               " (ID: " + currentUser.userId + ")";
+            loadCreateDocumentFrame();
             runAutoAction();
           })
           .catch((err) => {
